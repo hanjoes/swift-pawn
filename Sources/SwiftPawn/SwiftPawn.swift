@@ -30,13 +30,23 @@ public struct SwiftPawn {
     ///
     /// - Parameters:
     ///   - command: command to execute
-    ///   - arguments: arguments passed in
+    ///   - arguments: arguments passed in, the first argument must be the name of the command (last element after "/")
     public static func execute(command: String, arguments args: [String]) throws {
         var cpid: pid_t = 0
         let argv = args.map { $0.withCString(strdup) }
 
         // spawn
-        let pid = posix_spawnp(&cpid, command, nil, nil, argv + [nil], environ)
+        var fa: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&fa)
+        posix_spawn_file_actions_addclose(&fa, 3)
+        posix_spawn_file_actions_addopen(&fa, 3, "/tmp/spawn_out", O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+        posix_spawn_file_actions_adddup2(&fa, 3, 1)
+        
+        posix_spawn_file_actions_addclose(&fa, 4)
+        posix_spawn_file_actions_addopen(&fa, 4, "/tmp/spawn_err", O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+        posix_spawn_file_actions_adddup2(&fa, 4, 1)
+        let pid = posix_spawnp(&cpid, command, &fa, nil, argv + [nil], environ)
+        posix_spawn_file_actions_destroy(&fa)
         guard pid == 0 else {
             throw Errors.spawn("Execution of \(command) could not be started due to error code (\(pid))")
         }
