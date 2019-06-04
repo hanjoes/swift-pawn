@@ -13,7 +13,13 @@ public struct SwiftPawn {
         case signaled(Int32)
         case stopped(String)
         case coredumped(String)
+
+        case io(String)
     }
+
+    private static let StdoutFileBase = "/tmp/swfit_pawn_stdout"
+
+    private static let StderrFileBase = "/tmp/swift_pawn_stderr"
 
     /// Simple execution of command, the parent process will hang and wait for the child process to complete.
     ///
@@ -31,19 +37,24 @@ public struct SwiftPawn {
     /// - Parameters:
     ///   - command: command to execute
     ///   - arguments: arguments passed in, the first argument must be the name of the command (last element after "/")
-    public static func execute(command: String, arguments args: [String]) throws {
+    /// - Returns: program exit status, captured stdout/stderr
+    public static func execute(command: String, arguments args: [String]) throws -> (Int32, String, String) {
         var cpid: pid_t = 0
         let argv = args.map { $0.withCString(strdup) }
 
         // spawn
+        var g = SystemRandomNumberGenerator()
+        let randomNum = g.next()
         var fa: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&fa)
         posix_spawn_file_actions_addclose(&fa, 3)
-        posix_spawn_file_actions_addopen(&fa, 3, "/tmp/spawn_out", O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+        let fout = "\(StdoutFileBase)_\(randomNum)"
+        posix_spawn_file_actions_addopen(&fa, 3, fout, O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
         posix_spawn_file_actions_adddup2(&fa, 3, 1)
-        
+
         posix_spawn_file_actions_addclose(&fa, 4)
-        posix_spawn_file_actions_addopen(&fa, 4, "/tmp/spawn_err", O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+        let ferr = "\(StderrFileBase)_\(randomNum)"
+        posix_spawn_file_actions_addopen(&fa, 4, ferr, O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
         posix_spawn_file_actions_adddup2(&fa, 4, 1)
         let pid = posix_spawnp(&cpid, command, &fa, nil, argv + [nil], environ)
         posix_spawn_file_actions_destroy(&fa)
@@ -70,6 +81,8 @@ public struct SwiftPawn {
             if rstat != 0 {
                 throw Errors.execution("Execution of \(command) failed with status (\(rstat))")
             }
+
+            return (rstat, try readAll(fout), try readAll(ferr))
         } else if _WSTATUS == _WSTOPPED { // WIFSTOPPED
             throw Errors.stopped("Execution of \(command) was stopped by signal \(stat >> 8)")
         } else { // WIFSIGNALED
@@ -80,20 +93,28 @@ public struct SwiftPawn {
         }
     }
 
-    /// Fail fast execution of command, the parent process will not hang and doesn't care about return status of the
-    /// child.
-    ///
-    /// - Parameters:
-    ///   - command: command to execute
-    ///   - arguments: arguments
-    /// - Throws: _SwiftPawn.Errors_
-    public static func nonBlockedExecute(command: String, arguments args: [String]) throws {
-        var cpid: pid_t = 0
-        let argv = args.map { $0.withCString(strdup) }
-
-        let pid = posix_spawnp(&cpid, command, nil, nil, argv + [nil], environ)
-        guard pid == 0 else {
-            throw Errors.spawn("Execution of \(command) could not be started due to error code (\(pid))")
+    private static func readAll(_ path: String) throws -> String {
+        let fd = fopen(path, "r")
+        defer { fclose(fd) }
+        
+        guard fd != nil else {
+            throw Errors.io("Opening stdout file \(path) failed with status \(errno)")
         }
+        
+        fseek(fd, 0, SEEK_END)
+        let size = ftell(fd)
+        rewind(fd)
+                
+        guard size > 0 else {
+            return ""
+        }
+        
+        // "size + 1" to include the "NULL byte"
+        var buffer = [UInt8](repeating: 0, count: size + 1)
+        let n = fread(&buffer, 1, size, fd)
+        if n < 0 {
+            throw Errors.io("File path has \(size) bytes, but fread returned \(n), errno(\(errno)")
+        }
+        return String(cString: buffer)
     }
 }

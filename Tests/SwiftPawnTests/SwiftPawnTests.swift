@@ -4,22 +4,20 @@ import XCTest
 final class SwiftPawnTests: XCTestCase {
     func testExecute() {
         do {
-            try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
-        } catch {
-            print(error)
-        }
-    }
-
-    func testNonBlockExecute() {
-        do {
-            try SwiftPawn.nonBlockedExecute(command: "git", arguments: ["git", "status"])
+            let (s, o, e) = try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
+            print("------ status ------")
+            print(s)
+            print("------ stdout ------")
+            print(o)
+            print("------ stderr ------")
+            print(e)
+            print("--------------------")
         } catch {
             print(error)
         }
     }
 
     static var allTests = [
-        ("testExecute", testExecute),
-        ("testNonBlockExecute", testNonBlockExecute),
+        ("testExecute", testExecute)
     ]
 }
