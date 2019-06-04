@@ -4,13 +4,13 @@ import XCTest
 final class SwiftPawnTests: XCTestCase {
     func testExecute() {
         do {
-            let (s, o, e) = try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
+            let (status, out, err) = try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
             print("------ status ------")
-            print(s)
+            print(status)
             print("------ stdout ------")
-            print(o)
+            print(out)
             print("------ stderr ------")
-            print(e)
+            print(err)
             print("--------------------")
         } catch {
             print(error)

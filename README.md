@@ -2,7 +2,7 @@
 
 Swift implementation for easy fork + exec. This implementation is Foundation-free.
 
-__Note:__ Currently doesn't support redirecting stdout/stderr. 
+
 
 # Usage
 
@@ -16,7 +16,7 @@ __Note:__ Currently doesn't support redirecting stdout/stderr.
 
 ```Swift
 do {
-    try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
+    let (status, out, err) = try SwiftPawn.execute(command: "git", arguments: ["git", "status"])
 } catch {
     print(error)
 }
