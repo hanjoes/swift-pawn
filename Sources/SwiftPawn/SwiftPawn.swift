@@ -55,7 +55,7 @@ public struct SwiftPawn {
         posix_spawn_file_actions_addclose(&fa, 4)
         let ferr = "\(StderrFileBase)_\(randomNum)"
         posix_spawn_file_actions_addopen(&fa, 4, ferr, O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
-        posix_spawn_file_actions_adddup2(&fa, 4, 1)
+        posix_spawn_file_actions_adddup2(&fa, 4, 2)
         let pid = posix_spawnp(&cpid, command, &fa, nil, argv + [nil], environ)
         posix_spawn_file_actions_destroy(&fa)
         guard pid == 0 else {
