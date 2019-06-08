@@ -78,10 +78,6 @@ public struct SwiftPawn {
                 let rstat = stat >> 8
             #endif
 
-            if rstat != 0 {
-                throw Errors.execution("Execution of \(command) failed with status (\(rstat))")
-            }
-
             return (rstat, try readAll(fout), try readAll(ferr))
         } else if _WSTATUS == _WSTOPPED { // WIFSTOPPED
             throw Errors.stopped("Execution of \(command) was stopped by signal \(stat >> 8)")
