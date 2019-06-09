@@ -4,35 +4,34 @@
     import Darwin
 #endif
 
+// MARK: - Errors
+
+public enum Errors: Error {
+    case spawn(String)
+    case execution(String)
+    case wait(String)
+    
+    case signaled(Int32)
+    case stopped(String)
+    case coredumped(String)
+    
+    case io(String)
+}
+
+// MARK: - SwiftPawn
+
 public struct SwiftPawn {
-    public enum Errors: Error {
-        case spawn(String)
-        case execution(String)
-        case wait(String)
-
-        case signaled(Int32)
-        case stopped(String)
-        case coredumped(String)
-
-        case io(String)
-    }
-
-    private static let StdoutFileBase = "/tmp/swfit_pawn_stdout"
-
-    private static let StderrFileBase = "/tmp/swift_pawn_stderr"
+    
+    private static let BufferSize = 4096
 
     /// Simple execution of command, the parent process will hang and wait for the child process to complete.
     ///
-    /// Ideally this method should be returning status and capturing stdout and stderr contents, Swift explicitly bars user
-    /// from using fork due to it's hard to get it right
+    /// Initially, I tried to use fork but Swift explicitly bars user from using fork due to it's hard to get it right
     /// (which makes sense, referring to [this link](https://www.evanjones.ca/fork-is-dangerous.html))
     /// although there is a workaround to use fork in Swift
     /// (as pointed out by [this link](https://gist.github.com/bugaevc/4307eaf045e4b4264d8e395b5878a63b)) I decide not to
     /// over-complicate things here due to posix_spawn is a better way of spawning child process to run another program
     /// (referring to [this link](https://github.com/rtomayko/posix-spawn#benchmarks)).
-    ///
-    /// When using posix_spawn there doesn't seem to be an easy way to redirect stdout or stderr to a string, as there is
-    /// not much customization we can do with posix_spawn (unlike fork where we can fully customize the child process).
     ///
     /// - Parameters:
     ///   - command: command to execute
@@ -42,25 +41,49 @@ public struct SwiftPawn {
         var cpid: pid_t = 0
         let argv = args.map { $0.withCString(strdup) }
 
+        // pipes
+        var pout = [Int32](repeating: 0, count: 2)
+        var ret = pipe(&pout)
+        if ret != 0 {
+            throw Errors.io("Failure to create pipe for stdout error code: \(ret)")
+        }
+        var perr = [Int32](repeating: 0, count: 2)
+        ret = pipe(&perr)
+        if ret != 0 {
+            throw Errors.io("Failure to create pipe for stderr error code: \(ret)")
+        }
+        
         // spawn
         var g = SystemRandomNumberGenerator()
         let randomNum = g.next()
         var fa: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&fa)
-        posix_spawn_file_actions_addclose(&fa, 3)
-        let fout = "\(StdoutFileBase)_\(randomNum)"
-        posix_spawn_file_actions_addopen(&fa, 3, fout, O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
-        posix_spawn_file_actions_adddup2(&fa, 3, 1)
-
-        posix_spawn_file_actions_addclose(&fa, 4)
-        let ferr = "\(StderrFileBase)_\(randomNum)"
-        posix_spawn_file_actions_addopen(&fa, 4, ferr, O_TRUNC | O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
-        posix_spawn_file_actions_adddup2(&fa, 4, 2)
+        
+        // setup stdout redirection
+        posix_spawn_file_actions_addclose(&fa, pout[0])
+        posix_spawn_file_actions_adddup2(&fa, pout[1], 1)
+        posix_spawn_file_actions_addclose(&fa, pout[1])
+        
+        // setup stderr redirection
+        posix_spawn_file_actions_addclose(&fa, perr[0])
+        posix_spawn_file_actions_adddup2(&fa, perr[1], 2)
+        posix_spawn_file_actions_addclose(&fa, perr[1])
+        
         let pid = posix_spawnp(&cpid, command, &fa, nil, argv + [nil], environ)
-        posix_spawn_file_actions_destroy(&fa)
+        defer { posix_spawn_file_actions_destroy(&fa) }
         guard pid == 0 else {
             throw Errors.spawn("Execution of \(command) could not be started due to error code (\(pid))")
         }
+        
+        defer { close(pout[0]) }
+        close(pout[1])
+        
+        defer { close(perr[0]) }
+        close(perr[1])
+        
+        // read redirected stdout/stderr, need to go before wait to make sure we consume all the data
+        let out = try readAll(pout[0])
+        let err = try readAll(perr[0])
 
         // wait
         var stat: Int32 = 0
@@ -78,7 +101,7 @@ public struct SwiftPawn {
                 let rstat = stat >> 8
             #endif
 
-            return (rstat, try readAll(fout), try readAll(ferr))
+            return (rstat, out, err)
         } else if _WSTATUS == _WSTOPPED { // WIFSTOPPED
             throw Errors.stopped("Execution of \(command) was stopped by signal \(stat >> 8)")
         } else { // WIFSIGNALED
@@ -88,29 +111,29 @@ public struct SwiftPawn {
             throw Errors.signaled(_WSTATUS)
         }
     }
-
-    private static func readAll(_ path: String) throws -> String {
-        let fd = fopen(path, "r")
-        defer { fclose(fd) }
+    
+    private static func readAll(_ fd: Int32) throws -> String {
+        var result = ""
         
-        guard fd != nil else {
-            throw Errors.io("Opening stdout file \(path) failed with status \(errno)")
+        var buffer = UnsafeMutablePointer<Int8>.allocate(capacity: BufferSize)
+        buffer.initialize(to: 0)
+        defer { buffer.deinitialize(count: BufferSize) }
+        defer { buffer.deallocate() }
+        
+        while true {
+            memset(buffer, 0, BufferSize)
+            let ret = read(fd, buffer, BufferSize - 1)
+            if ret < 0 {
+                throw Errors.io("Error reading from fd: \(fd), errno: \(errno)")
+            }
+            
+            result += String(cString: buffer)
+            
+            if ret == 0 {
+                break
+            }
         }
         
-        fseek(fd, 0, SEEK_END)
-        let size = ftell(fd)
-        rewind(fd)
-                
-        guard size > 0 else {
-            return ""
-        }
-        
-        // "size + 1" to include the "NULL byte"
-        var buffer = [UInt8](repeating: 0, count: size + 1)
-        let n = fread(&buffer, 1, size, fd)
-        if n < 0 {
-            throw Errors.io("File path has \(size) bytes, but fread returned \(n), errno(\(errno)")
-        }
-        return String(cString: buffer)
+        return result
     }
 }
