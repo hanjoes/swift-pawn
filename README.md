@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/hanjoes/swift-pawn.svg?branch=master)](https://travis-ci.org/hanjoes/swift-pawn)
+
 # SwiftPawn
 
 Swift implementation for easy fork + exec. This implementation is Foundation-free.
