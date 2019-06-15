@@ -2,10 +2,10 @@ matrix:
   include:
     - os: linux
       dist: trusty
-    - os: linux
+    - os: osx
       osx_image: xcode10.2
 
-language: generic
+language: swift
 sudo: required
 env: SWIFT_VERSION=5.0.1
 install:
