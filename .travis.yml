@@ -1,0 +1,14 @@
+matrix:
+  include:
+    - os: linux
+      dist: trusty
+    - os: linux
+      osx_image: xcode10.2
+
+language: generic
+sudo: required
+env: SWIFT_VERSION=5.0.1
+install:
+  - eval "$(curl -sL https://swiftenv.fuller.li/install.sh)"
+script:
+  - swift build
