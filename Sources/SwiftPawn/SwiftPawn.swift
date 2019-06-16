@@ -55,7 +55,18 @@ public struct SwiftPawn {
     // spawn
     var g = SystemRandomNumberGenerator()
     let randomNum = g.next()
-    var fa: posix_spawn_file_actions_t!
+
+    // Swift version 5.1-dev (LLVM e56fafcd29, Swift c2848e793f)
+    // with the above version of the toolchain on unbuntu, we need to
+    // allocate the memory before getting the address otherwise we get
+    // runtime errors of force unwrapping "nil" when using the variable.
+    // initialization like:
+    //
+    // var fa: posix_spawn_file_actions_t!
+    //
+    // resulted in failures.
+    var fa: posix_spawn_file_actions_t! = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: MemoryLayout<posix_spawn_file_actions_t>.size).pointee
+    defer { fa.deallocate() }
     posix_spawn_file_actions_init(&fa)
 
     // setup stdout redirection
