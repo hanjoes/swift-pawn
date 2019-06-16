@@ -65,8 +65,9 @@ public struct SwiftPawn {
     // var fa: posix_spawn_file_actions_t!
     //
     // resulted in failures.
+    // and there seems no need to explicitly deallocate this memory as
+    // it will be returned to system by posix_spawn_file_actions_destroy call.
     var fa: posix_spawn_file_actions_t! = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: MemoryLayout<posix_spawn_file_actions_t>.size).pointee
-    defer { fa.deallocate() }
     posix_spawn_file_actions_init(&fa)
 
     // setup stdout redirection
